@@ -142,18 +142,26 @@ type ImageServer interface {
 }
 
 func (svc *imageService) getRef(name string) (types.ImageReference, error) {
+	logrus.WithFields(logrus.Fields{"name": name}).Infof("+++pmtk imageService.getRef() - ENTRY")
+	defer logrus.WithFields(logrus.Fields{"name": name}).Infof("+++pmtk imageService.getRef() - EXIT")
+
 	ref, err := alltransports.ParseImageName(name)
+	logrus.WithFields(logrus.Fields{"ref": ref, "err": err}).Infof("+++pmtk imageService.getRef() - alltransports.ParseImageName")
 	if err != nil {
 		ref2, err2 := istorage.Transport.ParseStoreReference(svc.store, "@"+name)
+		logrus.WithFields(logrus.Fields{"ref2": ref2, "err2": err2}).Infof("+++pmtk imageService.getRef() - istorage.Transport.ParseStoreReference")
 		if err2 != nil {
 			ref3, err3 := istorage.Transport.ParseStoreReference(svc.store, name)
+			logrus.WithFields(logrus.Fields{"ref3": fmt.Sprintf("#%v", ref3), "err3": err3}).Infof("+++pmtk imageService.getRef() - istorage.Transport.ParseStoreReference")
 			if err3 != nil {
+				logrus.Infof("+++pmtk imageService.getRef() - return with error")
 				return nil, err
 			}
 			ref2 = ref3
 		}
 		ref = ref2
 	}
+	logrus.WithFields(logrus.Fields{"ref": fmt.Sprintf("%#v", ref)}).Infof("+++pmtk imageService.getRef() - return")
 	return ref, nil
 }
 
@@ -314,32 +322,46 @@ func (svc *imageService) appendCachedResult(systemContext *types.SystemContext, 
 }
 
 func (svc *imageService) ListImages(systemContext *types.SystemContext, filter string) ([]ImageResult, error) {
+	logrus.WithFields(logrus.Fields{"filter": filter}).Infof("+++pmtk ListImages() - ENTRY")
+	defer logrus.WithFields(logrus.Fields{"filter": filter}).Infof("+++pmtk ListImages() - EXIT")
+
 	var results []ImageResult
 	if filter != "" {
+		logrus.Infof("+++pmtk ListImages() - filter not empty")
 		// we never remove entries from cache unless unfiltered ListImages call is made. Is it safe?
 		ref, err := svc.getRef(filter)
+		logrus.WithFields(logrus.Fields{"ref": ref, "err": err}).Infof("+++pmtk ListImages() - getRef()")
 		if err != nil {
 			return nil, err
 		}
 		if image, err := istorage.Transport.GetStoreImage(svc.store, ref); err == nil {
+			logrus.WithFields(logrus.Fields{"image": image, "err": err}).Infof("+++pmtk ListImages() - GetStoreImage()")
 			results, err = svc.appendCachedResult(systemContext, ref, image, []ImageResult{}, nil)
+			logrus.WithFields(logrus.Fields{"results": results, "err": err}).Infof("+++pmtk ListImages() - appendCachedResult()")
 			if err != nil {
 				return nil, err
 			}
+		} else {
+			logrus.WithFields(logrus.Fields{"image": image, "err": err}).Infof("+++pmtk ListImages() - GetStoreImage()")
 		}
 	} else {
+		logrus.Infof("+++pmtk ListImages() - filter is empty")
 		images, err := svc.store.Images()
+		logrus.WithFields(logrus.Fields{"images": images, "err": err}).Infof("+++pmtk ListImages() - store.Images()")
 		if err != nil {
 			return nil, err
 		}
 		newImageCache := make(imageCache, len(images))
+		logrus.Infof("+++pmtk ListImages() - before for range images")
 		for i := range images {
 			image := &images[i]
 			ref, err := istorage.Transport.ParseStoreReference(svc.store, "@"+image.ID)
+			logrus.WithFields(logrus.Fields{"image": image, "ref": ref, "err": err}).Infof("+++pmtk ListImages() - istorage.Transport.ParseStoreReference()")
 			if err != nil {
 				return nil, err
 			}
 			results, err = svc.appendCachedResult(systemContext, ref, image, results, newImageCache)
+			logrus.WithFields(logrus.Fields{"results": results, "err": err}).Infof("+++pmtk ListImages() - appendCachedResult()")
 			if err != nil {
 				// skip reporting errors if the images haven't finished pulling
 				if os.IsNotExist(err) {
@@ -357,36 +379,46 @@ func (svc *imageService) ListImages(systemContext *types.SystemContext, filter s
 				return nil, err
 			}
 		}
+		logrus.Infof("+++pmtk ListImages() - after for range images")
 		// replace image cache with cache we just built
 		// this invalidates all stale entries in cache
 		svc.imageCacheLock.Lock()
 		svc.imageCache = newImageCache
 		svc.imageCacheLock.Unlock()
 	}
+	logrus.WithFields(logrus.Fields{"results": results}).Infof("+++pmtk ListImages() - return")
 	return results, nil
 }
 
 func (svc *imageService) ImageStatus(systemContext *types.SystemContext, nameOrID string) (*ImageResult, error) {
+	logrus.WithFields(logrus.Fields{"nameOrID": nameOrID}).Infof("+++pmtk ImageStatus() - ENTRY")
+	defer logrus.WithFields(logrus.Fields{"nameOrID": nameOrID}).Infof("+++pmtk ImageStatus() - EXIT")
+
 	ref, err := svc.getRef(nameOrID)
+	logrus.WithFields(logrus.Fields{"ref": ref, "err": err}).Infof("+++pmtk ImageStatus() - getRef()")
 	if err != nil {
 		return nil, err
 	}
 	image, err := istorage.Transport.GetStoreImage(svc.store, ref)
+	logrus.WithFields(logrus.Fields{"image": ref, "err": err}).Infof("+++pmtk ImageStatus() - GetStoreImage()")
 	if err != nil {
 		return nil, err
 	}
 	svc.imageCacheLock.Lock()
 	cacheItem, ok := svc.imageCache[image.ID]
 	svc.imageCacheLock.Unlock()
+	logrus.WithFields(logrus.Fields{"cacheItem": cacheItem, "ok": ok, "image.ID": image.ID}).Infof("+++pmtk ImageStatus() - svc.imageCache[image.ID]")
 
 	if !ok {
 		cacheItem, err = svc.buildImageCacheItem(systemContext, ref) // Single-use-only, not actually cached
+		logrus.WithFields(logrus.Fields{"cacheItem": cacheItem, "err": err}).Infof("+++pmtk ImageStatus() - buildImageCacheItem")
 		if err != nil {
 			return nil, err
 		}
 	}
 
 	result := svc.buildImageResult(image, cacheItem)
+	logrus.WithFields(logrus.Fields{"result": result}).Infof("+++pmtk ImageStatus() - return")
 	return &result, nil
 }
 
@@ -775,9 +807,17 @@ func (svc *imageLookupService) isSecureIndex(indexName string) bool {
 // ResolveNames resolves an image name into a storage image ID or a fully-qualified image name (domain/repo/image:tag).
 // Will only return an empty slice if err != nil.
 func (svc *imageService) ResolveNames(systemContext *types.SystemContext, imageName string) ([]string, error) {
+	logrus.WithFields(logrus.Fields{"imageName": imageName}).Infof("+++pmtk ResolveNames() - ENTRY")
+	defer logrus.WithFields(logrus.Fields{"imageName": imageName}).Infof("+++pmtk ResolveNames() - EXIT")
+
+	logrus.WithFields(logrus.Fields{"len(imageName)": len(imageName), "minimumTruncatedIDLength": minimumTruncatedIDLength, "svc.store != nil": svc.store != nil}).Infof("+++pmtk ResolveNames()")
+	logrus.WithFields(logrus.Fields{"len(imageName) >= minimumTruncatedIDLength && svc.store != nil": len(imageName) >= minimumTruncatedIDLength && svc.store != nil}).Infof("+++pmtk ResolveNames()")
+
 	// _Maybe_ it's a truncated image ID.  Don't prepend a registry name, then.
 	if len(imageName) >= minimumTruncatedIDLength && svc.store != nil {
-		if img, err := svc.store.Image(imageName); err == nil && img != nil && strings.HasPrefix(img.ID, imageName) {
+		img, err := svc.store.Image(imageName)
+		logrus.WithFields(logrus.Fields{"img": img, "err": err, "err == nil && img != nil && strings.HasPrefix(img.ID, imageName)": err == nil && img != nil && strings.HasPrefix(img.ID, imageName)}).Infof("+++pmtk ResolveNames() - svc.store.Image(imageName)")
+		if err == nil && img != nil && strings.HasPrefix(img.ID, imageName) {
 			// It's a truncated version of the ID of an image that's present in local storage;
 			// we need to expand it.
 			return []string{img.ID}, nil
@@ -785,6 +825,7 @@ func (svc *imageService) ResolveNames(systemContext *types.SystemContext, imageN
 	}
 	// This to prevent any image ID to go through this routine
 	_, err := reference.ParseNormalizedNamed(imageName)
+	logrus.WithFields(logrus.Fields{"err": err}).Infof("+++pmtk ResolveNames() - reference.ParseNormalizedNamed")
 	if err != nil {
 		if strings.Contains(err.Error(), "cannot specify 64-byte hexadecimal strings") {
 			return nil, ErrCannotParseImageID
@@ -796,15 +837,18 @@ func (svc *imageService) ResolveNames(systemContext *types.SystemContext, imageN
 	disabled := types.ShortNameModeDisabled
 	systemContext.ShortNameMode = &disabled
 	resolved, err := shortnames.Resolve(systemContext, imageName)
+	logrus.WithFields(logrus.Fields{"resolved": resolved, "err": err}).Infof("+++pmtk ResolveNames() - shortnames.Resolve(imageName=%v)", imageName)
 	if err != nil {
 		return nil, err
 	}
 
 	if desc := resolved.Description(); len(desc) > 0 {
+		logrus.WithFields(logrus.Fields{"desc": desc}).Infof("+++pmtk ResolveNames() - resolved.Description")
 		logrus.Info(desc)
 	}
 
 	images := make([]string, len(resolved.PullCandidates))
+	logrus.Infof("+++pmtk ResolveNames() - before for range resolved.PullCandidates")
 	for i := range resolved.PullCandidates {
 		// Strip the tag from ambiguous image references that have a
 		// digest as well (e.g.  `image:tag@sha256:123...`).  Such
@@ -813,16 +857,20 @@ func (svc *imageService) ResolveNames(systemContext *types.SystemContext, imageN
 		ref := resolved.PullCandidates[i].Value
 		_, isTagged := ref.(reference.NamedTagged)
 		canonical, isDigested := ref.(reference.Canonical)
+		logrus.WithFields(logrus.Fields{"ref": ref, "isTagged": isTagged, "canonical": canonical, "isDigested": isDigested}).Infof("+++pmtk ResolveNames() - for body")
 		if isTagged && isDigested {
 			canonical, err = reference.WithDigest(reference.TrimNamed(ref), canonical.Digest())
+			logrus.WithFields(logrus.Fields{"isTagged && isDigested": isTagged && isDigested, "canonical": canonical, "err": err}).Infof("+++pmtk ResolveNames() - for body")
 			if err != nil {
 				return nil, err
 			}
 			ref = canonical
 		}
 		images[i] = ref.String()
+		logrus.WithFields(logrus.Fields{"i": i, "images[i]": images[i], "ref.String()": ref.String()}).Infof("+++pmtk ResolveNames() - for body - images[i] = ref.String()")
 	}
 
+	logrus.WithFields(logrus.Fields{"images": images}).Infof("+++pmtk ResolveNames() - return")
 	return images, nil
 }
 

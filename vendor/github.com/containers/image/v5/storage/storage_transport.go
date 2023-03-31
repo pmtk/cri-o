@@ -296,18 +296,30 @@ func (s *storageTransport) ParseReference(reference string) (types.ImageReferenc
 }
 
 func (s storageTransport) GetStoreImage(store storage.Store, ref types.ImageReference) (*storage.Image, error) {
+	logrus.WithFields(logrus.Fields{"ref": fmt.Sprintf("%#v", ref)}).Infof("+++pmtk storageTransport.GetStoreImage() - ENTRY")
+	defer logrus.WithFields(logrus.Fields{"ref": fmt.Sprintf("%#v", ref)}).Infof("+++pmtk storageTransport.GetStoreImage() - EXIT")
+
 	dref := ref.DockerReference()
+	logrus.WithFields(logrus.Fields{"dref": dref, "dref-pretty": fmt.Sprintf("%#v", dref)}).Infof("+++pmtk storageTransport.GetStoreImage() - ref.DockerReference()")
 	if dref != nil {
-		if img, err := store.Image(dref.String()); err == nil {
+		img, err := store.Image(dref.String())
+		logrus.WithFields(logrus.Fields{"dref.String()": dref.String(), "img": img, "err": err}).Infof("+++pmtk storageTransport.GetStoreImage() - store.Image()")
+		if err == nil {
+			logrus.WithFields(logrus.Fields{"image": img, "err": nil}).Infof("+++pmtk storageTransport.GetStoreImage() - RETURN")
 			return img, nil
 		}
 	}
 	if sref, ok := ref.(*storageReference); ok {
+		logrus.WithFields(logrus.Fields{"sref": sref}).Infof("+++pmtk storageTransport.GetStoreImage() - ref.(*storageReference)")
 		tmpRef := *sref
-		if img, err := tmpRef.resolveImage(nil); err == nil {
+		img, err := tmpRef.resolveImage(nil)
+		logrus.WithFields(logrus.Fields{"img": img, "err": err}).Infof("+++pmtk storageTransport.GetStoreImage() - tmpRef.resolveImage(nil)")
+		if err == nil {
+			logrus.WithFields(logrus.Fields{"image": img, "err": nil}).Infof("+++pmtk storageTransport.GetStoreImage() - RETURN")
 			return img, nil
 		}
 	}
+	logrus.WithFields(logrus.Fields{"image": nil, "err": storage.ErrImageUnknown}).Infof("+++pmtk storageTransport.GetStoreImage() - RETURN")
 	return nil, storage.ErrImageUnknown
 }
 

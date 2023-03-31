@@ -103,17 +103,24 @@ func multiArchImageMatchesSystemContext(store storage.Store, img *storage.Image,
 // Resolve the reference's name to an image ID in the store, if there's already
 // one present with the same name or ID, and return the image.
 func (s *storageReference) resolveImage(sys *types.SystemContext) (*storage.Image, error) {
+	logrus.WithFields(logrus.Fields{"s.named": s.named, "s.ID": s.id, "s": fmt.Sprintf("%#v", s)}).Infof("+++pmtk resolveImage() - ENTRY")
+	defer logrus.WithFields(logrus.Fields{"s.named": s.named, "s.ID": s.id, "s": fmt.Sprintf("%#v", s)}).Infof("+++pmtk resolveImage() - EXIT")
+
 	var loadedImage *storage.Image
 	if s.id == "" && s.named != nil {
 		// Look for an image that has the expanded reference name as an explicit Name value.
 		image, err := s.transport.store.Image(s.named.String())
+		logrus.WithFields(logrus.Fields{"image": image, "err": err}).Infof("+++pmtk resolveImage() - s.transport.store.Image(%s)", s.named.String())
 		if image != nil && err == nil {
 			loadedImage = image
 			s.id = image.ID
 		}
+		logrus.WithFields(logrus.Fields{"image != nil && err == nil": image != nil && err == nil, "loadedImage": loadedImage, "s.id": s.id}).Infof("+++pmtk resolveImage()")
 	}
 	if s.id == "" && s.named != nil {
-		if digested, ok := s.named.(reference.Digested); ok {
+		digested, ok := s.named.(reference.Digested)
+		logrus.WithFields(logrus.Fields{"digested": digested, "ok": ok}).Infof("+++pmtk resolveImage() - s.named.(reference.Digested)")
+		if ok {
 			// Look for an image with the specified digest that has the same name,
 			// though possibly with a different tag or digest, as a Name value, so
 			// that the canonical reference can be implicitly resolved to the image.
@@ -131,22 +138,29 @@ func (s *storageReference) resolveImage(sys *types.SystemContext) (*storage.Imag
 			//   SystemContext.{OS,Architecture,Variant}Choice to the same storage).
 			//   In this case we prefer the image matching the current SystemContext.
 			images, err := s.transport.store.ImagesByDigest(digested.Digest())
+			logrus.WithFields(logrus.Fields{"images": images, "err": err}).Infof("+++pmtk resolveImage() - s.transport.store.ImagesByDigest(digested.Digest() = %v)", digested.Digest())
+
 			if err == nil && len(images) > 0 {
 				for _, image := range images {
+					logrus.WithFields(logrus.Fields{"image": image, "imageMatchesRepo(image, s.named)": imageMatchesRepo(image, s.named)}).Infof("+++pmtk resolveImage() - for range images - body")
 					if imageMatchesRepo(image, s.named) {
+						logrus.WithFields(logrus.Fields{"loadedImage == nil": loadedImage == nil, "multiArchImageMatchesSystemContext": multiArchImageMatchesSystemContext(s.transport.store, image, digested.Digest(), sys)}).Infof("+++pmtk resolveImage() - for range images - body")
 						if loadedImage == nil || multiArchImageMatchesSystemContext(s.transport.store, image, digested.Digest(), sys) {
 							loadedImage = image
 							s.id = image.ID
+							logrus.WithFields(logrus.Fields{"loadedImage": loadedImage, "s.id": s.id}).Infof("+++pmtk resolveImage() - for range images - body")
 						}
 					}
 				}
 			}
 		}
 	}
+	logrus.WithFields(logrus.Fields{"s.id": s.id}).Infof("+++pmtk resolveImage() - before s.id == \"\"")
 	if s.id == "" {
 		logrus.Debugf("reference %q does not resolve to an image ID", s.StringWithinTransport())
 		return nil, fmt.Errorf("reference %q does not resolve to an image ID: %w", s.StringWithinTransport(), ErrNoSuchImage)
 	}
+	logrus.WithFields(logrus.Fields{"loadedImage == nil": loadedImage == nil}).Infof("+++pmtk resolveImage() - before loadedImage == nil")
 	if loadedImage == nil {
 		img, err := s.transport.store.Image(s.id)
 		if err != nil {
@@ -154,6 +168,7 @@ func (s *storageReference) resolveImage(sys *types.SystemContext) (*storage.Imag
 		}
 		loadedImage = img
 	}
+	logrus.WithFields(logrus.Fields{"s.named != nil": s.named != nil}).Infof("+++pmtk resolveImage() - before s.named != nil")
 	if s.named != nil {
 		if !imageMatchesRepo(loadedImage, s.named) {
 			logrus.Errorf("no image matching reference %q found", s.StringWithinTransport())
@@ -178,6 +193,7 @@ func (s *storageReference) resolveImage(sys *types.SystemContext) (*storage.Imag
 			}
 		}
 	}
+	defer logrus.WithFields(logrus.Fields{"loadedImage": loadedImage}).Infof("+++pmtk resolveImage() - return")
 	return loadedImage, nil
 }
 

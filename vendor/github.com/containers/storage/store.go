@@ -2949,6 +2949,8 @@ func (al *additionalLayer) Release() {
 func (s *store) Image(id string) (*Image, error) {
 	var res *Image
 	if done, err := s.readAllImageStores(func(store roImageStore) (bool, error) {
+		// images, err := store.Images()
+		// logrus.WithFields(logrus.Fields{"images": fmt.Sprintf("%#v", images), "err": err}).Infof("+++pmtk store.Image() - roImageStore.Images()")
 		image, err := store.Get(id)
 		if err == nil {
 			res = image
